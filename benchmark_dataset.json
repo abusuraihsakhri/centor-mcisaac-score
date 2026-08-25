@@ -1,0 +1,56 @@
+[
+  {
+    "case_id": "MCISAAC-01",
+    "description": "Pediatric High Probability Strep (8 y/o with full Centor criteria)",
+    "inputs": {
+      "absence_of_cough": true,
+      "tender_anterior_cervical_nodes": true,
+      "tonsillar_exudate_or_swelling": true,
+      "history_of_fever_or_temp_gt_38": true,
+      "age_years": 8.0
+    },
+    "expected": {
+      "centor_score": 4,
+      "age_modifier": 1,
+      "mcisaac_score": 5,
+      "strep_probability_pct": "51% - 53%",
+      "recommended_action": "EMPIRIC_ABX_OR_TEST"
+    }
+  },
+  {
+    "case_id": "MCISAAC-02",
+    "description": "Adult Intermediate Risk (30 y/o, 2 Centor criteria)",
+    "inputs": {
+      "absence_of_cough": true,
+      "tender_anterior_cervical_nodes": true,
+      "tonsillar_exudate_or_swelling": false,
+      "history_of_fever_or_temp_gt_38": false,
+      "age_years": 30.0
+    },
+    "expected": {
+      "centor_score": 2,
+      "age_modifier": 0,
+      "mcisaac_score": 2,
+      "strep_probability_pct": "11% - 17%",
+      "recommended_action": "TEST_RADT_OR_CULTURE"
+    }
+  },
+  {
+    "case_id": "MCISAAC-03",
+    "description": "Elderly Patient with Low Risk (65 y/o, cough present, no fever)",
+    "inputs": {
+      "absence_of_cough": false,
+      "tender_anterior_cervical_nodes": false,
+      "tonsillar_exudate_or_swelling": false,
+      "history_of_fever_or_temp_gt_38": false,
+      "age_years": 65.0
+    },
+    "expected": {
+      "centor_score": 0,
+      "age_modifier": -1,
+      "mcisaac_score": -1,
+      "strep_probability_pct": "1% - 2.5%",
+      "recommended_action": "NO_TEST_NO_ABX"
+    }
+  }
+]

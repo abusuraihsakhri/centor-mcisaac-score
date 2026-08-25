@@ -1,0 +1,6 @@
+patient_id,absence_of_cough,tender_cervical_nodes,tonsillar_exudate,fever,age,weight_kg,penicillin_allergic
+PT-01,1,1,1,1,8,25.0,0
+PT-02,0,0,0,0,50,75.0,0
+PT-03,1,1,0,0,28,68.0,0
+PT-04,1,1,1,0,35,82.0,1
+PT-05,1,1,1,1,60,70.0,0
