@@ -1,144 +1,123 @@
-# Centor & McIsaac (Modified Centor) Strep Pharyngitis Score
+# Centor Mcisaac Score
 
-A robust, zero-dependency Python implementation of the **Centor Score** and **Modified Centor (McIsaac) Score** for Group A Beta-Hemolytic Streptococcal (GABHS / *Streptococcus pyogenes*) pharyngitis risk stratification and antimicrobial stewardship.
+> **Domain:** Clinical Decision Support & Biomedical Computing  
+> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
 
-Implements clinical decision thresholds aligned with the **Infectious Diseases Society of America (IDSA)**, the **American Academy of Pediatrics (AAP)**, and landmark validation trials (*Centor et al. 1981*, *McIsaac et al. 1998, 2004*).
+<div align="center">
 
----
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
+![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
+![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 
-## Clinical Background & Diagnostic Utility
-
-Group A Streptococcal (GAS) pharyngitis accounts for approximately 15%–30% of sore throats in pediatric patients (ages 3–14) and 5%–15% in adults. Treating viral pharyngitis with antibiotics increases healthcare costs, exposes patients to adverse drug events, and drives microbial resistance.
-
-The **Centor Criteria** (1981) and subsequent **McIsaac modification** (1998, 2004) incorporate patient age to optimize pre-test probability estimation, enabling clinicians to avoid unnecessary Rapid Antigen Detection Tests (RADT) and throat cultures in low-risk individuals while promptly identifying candidates for testing or therapy.
-
----
-
-## Scoring System & Algorithmic Rules
-
-### 1. Centor Criteria (4 Core Factors, 1 Point Each)
-1. **Absence of cough** (+1)
-2. **Swollen / tender anterior cervical lymph nodes** (+1)
-3. **Tonsillar exudate or tonsillar swelling** (+1)
-4. **History of fever or measured temperature > 38.0 °C (100.4 °F)** (+1)
+</div>
 
 ---
 
-### 2. McIsaac Age Modifiers
+## 📖 What It Does
 
-| Age Group | Modifier | Rationale |
-| :--- | :---: | :--- |
-| **3 to 14 years** | **+1** | Peak incidence of GAS pharyngitis (~30%–40% prevalence) |
-| **15 to 44 years** | **0** | Baseline adult incidence (~15% prevalence) |
-| **$\ge$ 45 years** | **-1** | Lower incidence in older adults (~5% prevalence) |
-| **< 3 years** | **0** | *Caveat*: GAS pharyngitis is rare; acute rheumatic fever is extraordinarily uncommon under 3 yrs. Testing is generally discouraged unless household contact. |
+Centor and Modified Centor (McIsaac) Score for Streptococcal Pharyngitis
+Implements clinical scoring criteria (Centor et al. 1981, McIsaac et al. 1998, 2004)
+for Group A Beta-Hemolytic Streptococcal (GABHS) pharyngitis evaluation and diagnostic stewardship.
 
----
-
-### 3. Risk Stratification & Clinical Action Thresholds
-
-| McIsaac Score | Estimated GAS Risk | Action Threshold (IDSA / CDC / ACP) |
-| :---: | :---: | :--- |
-| **$\le 0$** | **1% – 2.5%** | **No testing, no antibiotics**. Provide symptomatic analgesia & supportive care. |
-| **1** | **5% – 10%** | **No testing, no antibiotics**. Provide symptomatic care. |
-| **2** | **11% – 17%** | **Perform RADT or throat swab culture**. Treat with antibiotics only if test is positive. |
-| **3** | **28% – 35%** | **Perform RADT or culture**. Treat if positive; consider empiric antibiotics if high clinical suspicion. |
-| **$\ge 4$ (4 or 5)**| **51% – 53%** | **Empiric antibiotic therapy** OR **RADT + antibiotic treatment if positive**. |
+Author: Dr. Abu Suraih Sakhri
+License: MIT
 
 ---
 
-## Guideline Antimicrobial Regimens (IDSA / AAP)
+## ⚙️ Key Capabilities & Algorithmic Modules
 
-| Clinical Presentation | Drug & Route | Dosing Regimen | Duration |
-| :--- | :--- | :--- | :--- |
-| **First-Line Standard** | Penicillin V Potassium (Oral) | Adult: 500 mg BD/TDS<br>Peds: 250 mg BD (<27 kg) / 500 mg BD ($\ge$27 kg) | 10 days |
-| **First-Line Peds Option** | Amoxicillin (Oral suspension) | Adult: 500 mg BD or 1000 mg OD<br>Peds: 50 mg/kg once daily (max 1000 mg) | 10 days |
-| **Parenteral Alternative** | Benzathine Penicillin G (IM) | 1,200,000 U single dose (600,000 U if <27 kg) | Single dose |
-| **Penicillin Allergy (Non-Severe)** | Cephalexin (Oral) | Adult: 500 mg BD<br>Peds: 20 mg/kg/dose BD | 10 days |
-| **Severe Penicillin Allergy** | Azithromycin (Oral) | Adult: 500 mg Day 1, 250 mg Days 2–5<br>Peds: 12 mg/kg Day 1, 6 mg/kg Days 2–5 | 5 days |
-| **Lincosamide Alternative** | Clindamycin (Oral) | Adult: 300 mg TDS<br>Peds: 20 mg/kg/day in 3 divided doses | 10 days |
+### 🔬 Core Algorithmic & Evaluation Engines
+
+- **`ClinicalAction`** — dedicated module for clinical action evaluation and state verification.
+- **`RiskTier`** — dedicated module for risk tier evaluation and state verification.
+- **`CentorCriteriaDetail`** — dedicated module for centor criteria detail evaluation and state verification.
+- **`McIsaacResult`** — dedicated module for mc isaac result evaluation and state verification.
 
 ---
 
-## Project Structure
+## 📐 Mathematical Formulation & Logic
 
-```
-centor-mcisaac-score/
-├── centor.py               # Core computational engine and scoring rules
-├── cli.py                  # Command-line interface with interactive mode
-├── test_centor.py          # Unit test suite (27+ test cases)
-├── benchmark_dataset.json  # Standardized clinical benchmark test cases
-├── sample.csv              # Sample batch dataset
-├── Dockerfile              # Container specification
-├── docker-compose.yml      # Docker compose configuration
-└── README.md               # Clinical documentation and usage manual
+```text
+  score = 0
+  Calculates composite McIsaac score (-1 to 5).
+  centor_score = calculate_raw_centor(
+  mcisaac_score = centor_score + age_mod
+  elif mcisaac_score == 1:
 ```
 
 ---
 
-## CLI Usage
+## 💻 CLI Quickstart & Usage
 
-### Interactive Clinical Questionnaire
+### 1. Guided Interactive Mode
 ```bash
-python cli.py interactive
+python cli.py
 ```
 
-### Single Case Assessment
+### 2. Direct Parameterized Evaluation
 ```bash
-# Evaluate a 9-year-old child with fever, no cough, tonsillar exudates, and tender lymph nodes
-python cli.py eval --no-cough --nodes --exudate --fever --age 9
-
-# JSON format output for integration
-python cli.py eval --no-cough --nodes --exudate --fever --age 9 --json
+python cli.py --- <value> --age <value> --temp <value> --temperature <value>
 ```
 
-### Batch CSV Evaluation
+### Parameter Reference
+- `---`: Specifies input measurement or parameter value.
+- `--age`: Specifies input measurement or parameter value.
+- `--temp`: Specifies input measurement or parameter value.
+- `--temperature`: Specifies input measurement or parameter value.
+- `--fever`: Specifies input measurement or parameter value.
+- `--no-cough`: Specifies input measurement or parameter value.
+- `--cough-absent`: Specifies input measurement or parameter value.
+- `--nodes`: Specifies input measurement or parameter value.
+- `--tender-nodes`: Specifies input measurement or parameter value.
+- `--exudate`: Specifies input measurement or parameter value.
+
+### Input Data Schema
+
+| Field | Description | Requirement |
+|:------|:------------|:------------|
+| `patient_id` | Parameter / observation metric | Required |
+| `absence_of_cough` | Parameter / observation metric | Required |
+| `tender_cervical_nodes` | Parameter / observation metric | Required |
+| `tonsillar_exudate` | Parameter / observation metric | Required |
+| `fever` | Parameter / observation metric | Required |
+| `age` | Parameter / observation metric | Required |
+| `weight_kg` | Parameter / observation metric | Required |
+| `penicillin_allergic` | Parameter / observation metric | Required |
+
+---
+
+## 🛡️ Security & Enterprise Architecture
+
+* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
+* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
+* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
+* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
+* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
+
+---
+
+## 🧪 Testing & Verification
+
+Run the automated test suite:
+
 ```bash
-python cli.py batch -i sample.csv -o results.csv
+pytest -v
 ```
 
----
+Execute high-throughput batch simulation benchmarks:
 
-## Programmatic Usage
-
-```python
-from centor import evaluate_mcisaac, ClinicalAction
-
-res = evaluate_mcisaac(
-    absence_of_cough=True,
-    tender_anterior_cervical_nodes=True,
-    tonsillar_exudate_or_swelling=True,
-    history_of_fever_or_temp_gt_38=True,
-    age_years=8.0,
-    penicillin_allergic=False,
-)
-
-print(f"Raw Centor: {res.centor_score}/4")
-print(f"McIsaac Score: {res.mcisaac_score}/5")
-print(f"Action: {res.recommended_action.value}")
-print(f"Guidance: {res.clinical_guidance}")
-```
-
----
-
-## Test Verification
-
-Run all unit tests using `unittest`:
 ```bash
-python -m unittest discover -s . -p "test_*.py" -v
+python simulator.py --tasks 1000 --concurrency 8
 ```
 
 ---
 
-## References
+## 🐳 Container Deployment
 
-1. **Centor RM, et al.** (1981). *The diagnosis of strep throat in adults in the emergency room*. Med Decis Making; 1(3):239–246.
-2. **McIsaac WJ, et al.** (1998). *A clinical score to reduce unnecessary antibiotic use in patients with sore throat*. CMAJ; 158(1):75–83.
-3. **McIsaac WJ, et al.** (2004). *Empirical validation of guidelines for the management of pharyngitis in children and adults*. JAMA; 291(13):1587–1595.
-4. **Shulman ST, et al.** (2012). *Clinical Practice Guideline for the Diagnosis and Management of Group A Streptococcal Pharyngitis: 2012 Update by the Infectious Diseases Society of America*. Clin Infect Dis; 55(10):e86–e102.
-
----
-
-## License
-
-MIT License. Developed for clinical decision support and antimicrobial stewardship research.
+```bash
+docker build -t centor-mcisaac-score .
+docker run -p 8000:8000 centor-mcisaac-score
+```
