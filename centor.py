@@ -1,24 +1,27 @@
-"""
-Centor and Modified Centor (McIsaac) Score for Streptococcal Pharyngitis
-Implements clinical scoring criteria (Centor et al. 1981, McIsaac et al. 1998, 2004)
-for Group A Beta-Hemolytic Streptococcal (GABHS) pharyngitis evaluation and diagnostic stewardship.
+"""Centor and Modified Centor (McIsaac) score utilities.
 
-Author: Dr. Abu Suraih Sakhri
-License: MIT
+The score is used as a clinical risk-stratification aid for patients with sore
+throat. It does not diagnose group A streptococcal (GAS) pharyngitis and must
+not be used by itself to justify antibiotic treatment.
 """
 
 from __future__ import annotations
 
 import csv
-import json
 import math
-import sys
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class ClinicalAction(str, Enum):
+    """High-level action returned by the score engine.
+
+    EMPIRIC_ABX_OR_TEST is retained as a deprecated compatibility value for
+    callers that imported it from older releases; the evaluator no longer
+    emits it.
+    """
+
     NO_TEST_NO_ABX = "NO_TEST_NO_ABX"
     TEST_RADT_OR_CULTURE = "TEST_RADT_OR_CULTURE"
     EMPIRIC_ABX_OR_TEST = "EMPIRIC_ABX_OR_TEST"
@@ -52,16 +55,25 @@ class McIsaacResult:
     risk_tier: RiskTier
     recommended_action: ClinicalAction
     clinical_guidance: str
+    score_applicable: bool = True
+    gas_test_result: Optional[str] = None
     antibiotic_options: List[Dict[str, str]] = field(default_factory=list)
     symptomatic_measures: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     criteria_breakdown: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        d = asdict(self)
-        d["risk_tier"] = self.risk_tier.value
-        d["recommended_action"] = self.recommended_action.value
-        return d
+        data = asdict(self)
+        data["risk_tier"] = self.risk_tier.value
+        data["recommended_action"] = self.recommended_action.value
+        return data
+
+
+def _require_finite(value: float, name: str) -> float:
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number")
+    return value
 
 
 def calculate_raw_centor(
@@ -70,55 +82,87 @@ def calculate_raw_centor(
     tonsillar_exudate_or_swelling: bool = False,
     history_of_fever_or_temp_gt_38: bool = False,
 ) -> int:
-    """
-    Computes original 4-point Centor criteria (0 to 4).
-    Each present criterion scores +1.
-    """
-    score = 0
-    if bool(absence_of_cough):
-        score += 1
-    if bool(tender_anterior_cervical_nodes):
-        score += 1
-    if bool(tonsillar_exudate_or_swelling):
-        score += 1
-    if bool(history_of_fever_or_temp_gt_38):
-        score += 1
-    return score
+    """Compute the original four-item Centor score (0 to 4)."""
+    return sum(
+        bool(value)
+        for value in (
+            absence_of_cough,
+            tender_anterior_cervical_nodes,
+            tonsillar_exudate_or_swelling,
+            history_of_fever_or_temp_gt_38,
+        )
+    )
 
 
 def get_age_modifier(age_years: float) -> Tuple[int, Optional[str]]:
-    """
-    Computes McIsaac age modifier:
-      - Age 3 to 14: +1
-      - Age 15 to 44: 0
-      - Age >= 45: -1
-      - Age < 3: 0 with clinical caveat (GAS rare under 3 years)
-    """
+    """Return the McIsaac age modifier and any applicability warning."""
+    age_years = _require_finite(age_years, "Age")
     if age_years < 0:
         raise ValueError(f"Age cannot be negative: {age_years}")
 
-    warning = None
-    if age_years < 3.0:
-        modifier = 0
-        warning = "CAUTION: GAS pharyngitis is rare in children < 3 years old. Testing and scoring are generally not indicated unless special risk factors exist."
-    elif 3.0 <= age_years <= 14.0:
-        modifier = 1
-    elif 15.0 <= age_years <= 44.0:
-        modifier = 0
-    else:  # age >= 45
-        modifier = -1
-
-    return modifier, warning
+    if age_years < 3:
+        return 0, (
+            "The McIsaac score is not intended for children under 3 years; "
+            "GAS pharyngitis is uncommon and may present atypically in this age group."
+        )
+    if age_years <= 14:
+        return 1, None
+    if age_years <= 44:
+        return 0, None
+    return -1, None
 
 
 def calculate_mcisaac_score(centor_score: int, age_years: float) -> int:
-    """
-    Calculates composite McIsaac score (-1 to 5).
-    """
-    if not (0 <= centor_score <= 4):
+    """Calculate the composite McIsaac score (-1 to 5 before normalization)."""
+    if isinstance(centor_score, bool) or not isinstance(centor_score, int):
+        raise ValueError("Centor score must be an integer from 0 to 4")
+    if not 0 <= centor_score <= 4:
         raise ValueError(f"Centor score must be between 0 and 4, got: {centor_score}")
-    mod, _ = get_age_modifier(age_years)
-    return centor_score + mod
+    modifier, _ = get_age_modifier(age_years)
+    return centor_score + modifier
+
+
+def _probability_for_score(score: int) -> Tuple[str, float, RiskTier]:
+    """Map McIsaac score to Fine et al. 2012 validation prevalence estimates.
+
+    Fine et al. normalized scores -1 and 5 to 0 and 4, respectively. The
+    returned value is therefore an observed test-positivity estimate from that
+    validation cohort, not an individual diagnostic probability.
+    """
+    normalized = min(4, max(0, score))
+    mapping = {
+        0: ("8% (95% CI 8–9%)", 8.0, RiskTier.VERY_LOW),
+        1: ("14% (95% CI 13–14%)", 14.0, RiskTier.LOW),
+        2: ("23% (95% CI 23–23%)", 23.0, RiskTier.INTERMEDIATE),
+        3: ("37% (95% CI 37–37%)", 37.0, RiskTier.HIGH),
+        4: ("55% (95% CI 55–56%)", 55.0, RiskTier.VERY_HIGH),
+    }
+    return mapping[normalized]
+
+
+def _normalize_test_result(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "": None,
+        "not_tested": None,
+        "unknown": None,
+        "positive": "positive",
+        "positive_radt": "positive",
+        "positive_culture": "positive",
+        "positive_naat": "positive",
+        "negative": "negative_radt",
+        "negative_radt": "negative_radt",
+        "negative_culture": "negative_culture",
+        "negative_naat": "negative_naat",
+    }
+    if normalized not in aliases:
+        raise ValueError(
+            "gas_test_result must be one of: positive, negative_radt, "
+            "negative_culture, negative_naat, or omitted"
+        )
+    return aliases[normalized]
 
 
 def get_antibiotic_regimens(
@@ -127,98 +171,123 @@ def get_antibiotic_regimens(
     age_years: Optional[float] = None,
     weight_kg: Optional[float] = None,
 ) -> List[Dict[str, str]]:
-    """
-    Returns IDSA/AAP/CDC recommended treatment regimens for confirmed/empiric GAS pharyngitis.
-    """
-    regimens = []
-    if not penicillin_allergic:
-        if age_years is not None and age_years < 12:
-            dose_peds = f"{min(500, round(weight_kg * 12.5))} mg" if weight_kg else "250 mg (<27 kg) or 500 mg (>=27 kg)"
-            regimens.append({
-                "drug": "Penicillin V potassium (Oral)",
-                "dosage": f"{dose_peds} 2 to 3 times daily",
-                "duration": "10 days",
-                "preference": "First-line preferred",
-                "notes": "Drug of choice for narrow spectrum and proven efficacy in acute rheumatic fever prevention."
-            })
-            regimens.append({
-                "drug": "Amoxicillin (Oral suspension)",
-                "dosage": f"{min(1000, round(weight_kg * 50))} mg/day divided once or twice daily (max 1000 mg/day)" if weight_kg else "50 mg/kg once daily (max 1000 mg)",
-                "duration": "10 days",
-                "preference": "First-line alternative in young children",
-                "notes": "Often preferred in pediatrics due to superior taste and palatability."
-            })
-        else:
-            regimens.append({
-                "drug": "Penicillin V potassium (Oral)",
-                "dosage": "500 mg 2 to 3 times daily (or 250 mg 4 times daily)",
-                "duration": "10 days",
-                "preference": "First-line drug of choice",
-                "notes": "Standard regimen for eradication and preventing non-suppurative complications."
-            })
-            regimens.append({
-                "drug": "Amoxicillin (Oral)",
-                "dosage": "500 mg twice daily OR 1000 mg once daily",
-                "duration": "10 days",
-                "preference": "First-line alternative",
-                "notes": "Ensure patient has no infectious mononucleosis (rash risk)."
-            })
-        regimens.append({
-            "drug": "Benzathine Penicillin G (Intramuscular)",
-            "dosage": "1,200,000 units IM single dose (600,000 units if < 27 kg)",
-            "duration": "Single dose",
-            "preference": "Parenteral alternative",
-            "notes": "Ideal if oral adherence or GI absorption is questionable."
-        })
-    else:
-        if severe_allergy:
-            # Type 1 IgE-mediated (anaphylaxis/angioedema)
-            regimens.append({
-                "drug": "Azithromycin (Oral)",
-                "dosage": "12 mg/kg once daily (max 500 mg) on Day 1, then 6 mg/kg once daily (max 250 mg) Days 2-5 (or 500 mg Day 1, 250 mg Days 2-5 for adults)",
-                "duration": "5 days",
-                "preference": "Preferred macrolide for severe penicillin allergy",
-                "notes": "Check regional macrolide resistance rates. Monitor QT interval if indicated."
-            })
-            regimens.append({
-                "drug": "Clarithromycin (Oral)",
-                "dosage": "250 mg twice daily (Pediatric: 15 mg/kg/day divided BD)",
-                "duration": "10 days",
-                "preference": "Alternative macrolide",
-                "notes": "Take with meals to reduce GI irritation."
-            })
-            regimens.append({
-                "drug": "Clindamycin (Oral)",
-                "dosage": "300 mg three times daily (Pediatric: 20 mg/kg/day divided TDS)",
-                "duration": "10 days",
-                "preference": "Lincosamide alternative",
-                "notes": "Effective for recurrent or macrolide-resistant GABHS."
-            })
-        else:
-            # Non-severe allergy (minor rash)
-            regimens.append({
-                "drug": "Cephalexin (Cefalexin)",
-                "dosage": "500 mg twice daily (Pediatric: 20 mg/kg/dose twice daily)",
-                "duration": "10 days",
-                "preference": "First-generation cephalosporin for non-severe allergy",
-                "notes": "Safe in non-IgE mediated penicillin reactions."
-            })
-            regimens.append({
-                "drug": "Cefadroxil",
-                "dosage": "1000 mg once daily (Pediatric: 30 mg/kg once daily)",
-                "duration": "10 days",
-                "preference": "Alternative cephalosporin",
-                "notes": "Once-daily dosing facilitates compliance."
-            })
-            regimens.append({
-                "drug": "Azithromycin (Oral)",
-                "dosage": "500 mg Day 1, then 250 mg Days 2-5",
-                "duration": "5 days",
-                "preference": "Macrolide alternative",
-                "notes": "Use if cephalosporin allergy is also suspected."
-            })
+    """Return CDC-listed regimens for confirmed GAS pharyngitis.
 
-    return regimens
+    The function supplies reference regimens only. Local guidance, allergy
+    history, renal/hepatic considerations, drug interactions, pregnancy, and
+    patient-specific factors remain outside the scope of this calculator.
+    """
+    if age_years is not None:
+        age_years = _require_finite(age_years, "Age")
+        if age_years < 0:
+            raise ValueError("Age cannot be negative")
+    if weight_kg is not None:
+        weight_kg = _require_finite(weight_kg, "Weight")
+        if weight_kg <= 0:
+            raise ValueError("Weight must be greater than 0 kg")
+
+    if severe_allergy:
+        penicillin_allergic = True
+
+    if not penicillin_allergic:
+        if age_years is not None and age_years < 18:
+            penicillin_v = "250 mg orally twice or three times daily"
+            amoxicillin = (
+                "50 mg/kg orally once daily (max 1000 mg), or 25 mg/kg "
+                "twice daily (max 500 mg/dose)"
+            )
+        else:
+            penicillin_v = "500 mg orally twice daily, or 250 mg four times daily"
+            amoxicillin = "1000 mg orally once daily, or 500 mg twice daily"
+
+        if weight_kg is None:
+            benzathine = "600,000 units IM if <27 kg; 1,200,000 units IM if ≥27 kg"
+        elif weight_kg < 27:
+            benzathine = "600,000 units IM once"
+        else:
+            benzathine = "1,200,000 units IM once"
+
+        return [
+            {
+                "drug": "Penicillin V",
+                "dosage": penicillin_v,
+                "duration": "10 days",
+                "notes": "First-line option for confirmed GAS pharyngitis.",
+            },
+            {
+                "drug": "Amoxicillin",
+                "dosage": amoxicillin,
+                "duration": "10 days",
+                "notes": "First-line alternative for confirmed GAS pharyngitis.",
+            },
+            {
+                "drug": "Benzathine penicillin G",
+                "dosage": benzathine,
+                "duration": "Single dose",
+                "notes": "Intramuscular alternative when appropriate.",
+            },
+        ]
+
+    if severe_allergy:
+        return [
+            {
+                "drug": "Azithromycin",
+                "dosage": (
+                    "12 mg/kg orally once (max 500 mg), then 6 mg/kg once daily "
+                    "(max 250 mg) for the next 4 days"
+                ),
+                "duration": "5 days",
+                "notes": "Macrolide resistance varies geographically and temporally.",
+            },
+            {
+                "drug": "Clarithromycin",
+                "dosage": "7.5 mg/kg/dose orally twice daily (max 250 mg/dose)",
+                "duration": "10 days",
+                "notes": "Macrolide resistance varies geographically and temporally.",
+            },
+            {
+                "drug": "Clindamycin",
+                "dosage": "7 mg/kg/dose orally three times daily (max 300 mg/dose)",
+                "duration": "10 days",
+                "notes": "Resistance varies geographically and temporally.",
+            },
+        ]
+
+    return [
+        {
+            "drug": "Cephalexin",
+            "dosage": "20 mg/kg/dose orally twice daily (max 500 mg/dose)",
+            "duration": "10 days",
+            "notes": "Avoid in immediate-type hypersensitivity to penicillin.",
+        },
+        {
+            "drug": "Cefadroxil",
+            "dosage": "30 mg/kg orally once daily (max 1 g)",
+            "duration": "10 days",
+            "notes": "Avoid in immediate-type hypersensitivity to penicillin.",
+        },
+        {
+            "drug": "Azithromycin",
+            "dosage": (
+                "12 mg/kg orally once (max 500 mg), then 6 mg/kg once daily "
+                "(max 250 mg) for the next 4 days"
+            ),
+            "duration": "5 days",
+            "notes": "Macrolide resistance varies geographically and temporally.",
+        },
+        {
+            "drug": "Clarithromycin",
+            "dosage": "7.5 mg/kg/dose orally twice daily (max 250 mg/dose)",
+            "duration": "10 days",
+            "notes": "Macrolide resistance varies geographically and temporally.",
+        },
+        {
+            "drug": "Clindamycin",
+            "dosage": "7 mg/kg/dose orally three times daily (max 300 mg/dose)",
+            "duration": "10 days",
+            "notes": "Resistance varies geographically and temporally.",
+        },
+    ]
 
 
 def evaluate_mcisaac(
@@ -231,15 +300,25 @@ def evaluate_mcisaac(
     penicillin_allergic: bool = False,
     severe_allergy: bool = False,
     weight_kg: Optional[float] = None,
+    gas_test_result: Optional[str] = None,
+    clear_viral_features: bool = False,
+    high_risk_context: bool = False,
 ) -> McIsaacResult:
-    """
-    Comprehensive evaluation of Modified Centor (McIsaac) score.
-    """
-    # Auto-detect fever if temperature is provided
-    fever_flag = history_of_fever_or_temp_gt_38
+    """Evaluate the Modified Centor score and return testing-oriented guidance."""
+    age_years = _require_finite(age_years, "Age")
+    if age_years < 0:
+        raise ValueError("Age cannot be negative")
     if temperature_c is not None:
-        if temperature_c >= 38.0:
-            fever_flag = True
+        temperature_c = _require_finite(temperature_c, "Temperature")
+    if weight_kg is not None:
+        weight_kg = _require_finite(weight_kg, "Weight")
+        if weight_kg <= 0:
+            raise ValueError("Weight must be greater than 0 kg")
+
+    normalized_test = _normalize_test_result(gas_test_result)
+    fever_flag = bool(history_of_fever_or_temp_gt_38)
+    if temperature_c is not None and temperature_c >= 38.0:
+        fever_flag = True
 
     centor_score = calculate_raw_centor(
         absence_of_cough=absence_of_cough,
@@ -247,49 +326,74 @@ def evaluate_mcisaac(
         tonsillar_exudate_or_swelling=tonsillar_exudate_or_swelling,
         history_of_fever_or_temp_gt_38=fever_flag,
     )
+    age_modifier, age_warning = get_age_modifier(age_years)
+    mcisaac_score = centor_score + age_modifier
+    strep_pct, risk_num, risk_tier = _probability_for_score(mcisaac_score)
 
-    age_mod, warning_msg = get_age_modifier(age_years)
-    mcisaac_score = centor_score + age_mod
+    warnings: List[str] = []
+    if age_warning:
+        warnings.append(age_warning)
+    warnings.append(
+        "The displayed GAS percentage is an observed prevalence estimate from the "
+        "Fine et al. 2012 validation cohort; it is not an individualized probability."
+    )
 
-    warnings = []
-    if warning_msg:
-        warnings.append(warning_msg)
+    score_applicable = age_years >= 3
+    action = ClinicalAction.NO_TEST_NO_ABX
 
-    # Risk mapping and action thresholds (IDSA / McIsaac)
-    if mcisaac_score <= 0:
-        strep_pct = "1% - 2.5%"
-        risk_num = 1.8
-        risk_tier = RiskTier.VERY_LOW
-        action = ClinicalAction.NO_TEST_NO_ABX
-        guidance = "Very low risk of Group A Strep (1-2.5%). No diagnostic testing (throat swab/RADT) or antibiotic treatment indicated. Provide symptomatic care."
-    elif mcisaac_score == 1:
-        strep_pct = "5% - 10%"
-        risk_num = 7.5
-        risk_tier = RiskTier.LOW
-        action = ClinicalAction.NO_TEST_NO_ABX
-        guidance = "Low risk of Group A Strep (5-10%). Routine throat swab and antibiotics not recommended. Manage with analgesia and supportive care."
-    elif mcisaac_score == 2:
-        strep_pct = "11% - 17%"
-        risk_num = 14.0
-        risk_tier = RiskTier.INTERMEDIATE
+    if normalized_test == "positive":
+        guidance = (
+            "GAS has been confirmed by diagnostic testing. Antibiotic treatment is "
+            "recommended; use patient-specific prescribing guidance and local policy."
+        )
+    elif normalized_test == "negative_radt":
+        if 3 <= age_years < 18:
+            guidance = (
+                "RADT is negative. In symptomatic children and adolescents, obtain a "
+                "back-up throat culture and treat only if confirmatory testing is positive."
+            )
+        else:
+            guidance = (
+                "RADT is negative. Routine back-up throat culture is generally not indicated "
+                "in adults; reassess if the clinical course or differential diagnosis warrants it."
+            )
+    elif normalized_test in {"negative_culture", "negative_naat"}:
+        guidance = (
+            "Diagnostic testing is negative for GAS. Antibiotics for GAS pharyngitis are "
+            "not indicated; consider alternative causes and symptomatic care."
+        )
+    elif clear_viral_features:
+        guidance = (
+            "Clear viral features are present. GAS testing is usually unnecessary when the "
+            "clinical picture is consistent with viral pharyngitis."
+        )
+    elif not score_applicable:
+        guidance = (
+            "The McIsaac score is not applicable below age 3. Use clinical assessment and "
+            "age-appropriate guidance rather than this score to decide on testing."
+        )
+    elif high_risk_context:
         action = ClinicalAction.TEST_RADT_OR_CULTURE
-        guidance = "Intermediate risk of Group A Strep (11-17%). Perform Rapid Antigen Detection Test (RADT) or throat culture. Treat with antibiotics only if test is positive."
-    elif mcisaac_score == 3:
-        strep_pct = "28% - 35%"
-        risk_num = 31.5
-        risk_tier = RiskTier.HIGH
+        guidance = (
+            "A high-risk context is present. Consider GAS diagnostic testing even if the "
+            "clinical score is low."
+        )
+    elif mcisaac_score <= 1:
+        guidance = (
+            "Low McIsaac score. Diagnostic testing is often unlikely to be helpful in an "
+            "otherwise low-risk patient; apply local guidance and clinical judgment."
+        )
+    else:
         action = ClinicalAction.TEST_RADT_OR_CULTURE
-        guidance = "Elevated risk of Group A Strep (28-35%). Perform RADT or throat culture. Treat if positive, or initiate empiric therapy if clinical context / local prevalence is high."
-    else:  # score >= 4
-        strep_pct = "51% - 53%"
-        risk_num = 52.0
-        risk_tier = RiskTier.VERY_HIGH
-        action = ClinicalAction.EMPIRIC_ABX_OR_TEST
-        guidance = "High probability of Group A Strep (>50%). Empiric antibiotic therapy or rapid testing with treatment is strongly indicated."
+        guidance = (
+            "Consider GAS diagnostic testing (for example RADT, molecular testing, and/or "
+            "throat culture according to local practice). Do not prescribe antibiotics from "
+            "the clinical score alone."
+        )
 
-    abx_list = []
-    if action in (ClinicalAction.TEST_RADT_OR_CULTURE, ClinicalAction.EMPIRIC_ABX_OR_TEST):
-        abx_list = get_antibiotic_regimens(
+    antibiotic_options: List[Dict[str, str]] = []
+    if normalized_test == "positive":
+        antibiotic_options = get_antibiotic_regimens(
             penicillin_allergic=penicillin_allergic,
             severe_allergy=severe_allergy,
             age_years=age_years,
@@ -297,114 +401,143 @@ def evaluate_mcisaac(
         )
 
     symptomatic = [
-        "Analgesia: Paracetamol / Acetaminophen (10-15 mg/kg in children, 500-1000 mg in adults) or Ibuprofen (10 mg/kg in children, 400 mg in adults) for throat pain and fever.",
-        "Warm salt-water gargles (for cooperative children >= 6 years and adults).",
-        "Adequate fluid intake (warm teas with honey or cool soothing liquids).",
-        "Lozenges or throat sprays containing local anesthetic / anti-inflammatory agents.",
-        "Safety netting: Instruct patient/caregivers to return immediately if worsening swallowing, difficulty breathing, drooling, or high persistent fevers develop.",
+        "Use appropriate analgesia/antipyretics and maintain hydration as clinically appropriate.",
+        "Reassess urgently for airway compromise, drooling, inability to swallow, severe systemic illness, or suspected deep-neck infection.",
     ]
 
     breakdown = {
-        "absence_of_cough": absence_of_cough,
-        "tender_anterior_cervical_nodes": tender_anterior_cervical_nodes,
-        "tonsillar_exudate_or_swelling": tonsillar_exudate_or_swelling,
+        "absence_of_cough": bool(absence_of_cough),
+        "tender_anterior_cervical_nodes": bool(tender_anterior_cervical_nodes),
+        "tonsillar_exudate_or_swelling": bool(tonsillar_exudate_or_swelling),
         "history_of_fever_or_temp_gt_38": fever_flag,
         "raw_centor_score": centor_score,
         "age_years": age_years,
-        "age_modifier": age_mod,
+        "age_modifier": age_modifier,
         "final_mcisaac_score": mcisaac_score,
+        "clear_viral_features": bool(clear_viral_features),
+        "high_risk_context": bool(high_risk_context),
     }
 
     return McIsaacResult(
         centor_score=centor_score,
         age_years=age_years,
-        age_modifier=age_mod,
+        age_modifier=age_modifier,
         mcisaac_score=mcisaac_score,
         strep_probability_pct=strep_pct,
         risk_numeric=risk_num,
         risk_tier=risk_tier,
         recommended_action=action,
         clinical_guidance=guidance,
-        antibiotic_options=abx_list,
+        score_applicable=score_applicable,
+        gas_test_result=normalized_test,
+        antibiotic_options=antibiotic_options,
         symptomatic_measures=symptomatic,
         warnings=warnings,
         criteria_breakdown=breakdown,
     )
 
 
+_TRUE_VALUES = {"1", "true", "yes", "y", "t", "pos", "positive"}
+_FALSE_VALUES = {"0", "false", "no", "n", "f", "neg", "negative"}
+
+
+def _read_bool(present: Dict[str, Any], aliases: List[str], default: bool = False) -> bool:
+    for key in aliases:
+        if key not in present or present[key] is None or str(present[key]).strip() == "":
+            continue
+        value = present[key]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if value in (0, 1):
+                return bool(value)
+            raise ValueError(f"{key} must be a boolean or 0/1, got {value!r}")
+        normalized = str(value).strip().lower()
+        if normalized in _TRUE_VALUES:
+            return True
+        if normalized in _FALSE_VALUES:
+            return False
+        raise ValueError(f"{key} has an unrecognized boolean value: {value!r}")
+    return default
+
+
+def _read_float(
+    present: Dict[str, Any], aliases: List[str], *, required: bool = False
+) -> Optional[float]:
+    for key in aliases:
+        if key not in present or present[key] is None or str(present[key]).strip() == "":
+            continue
+        try:
+            value = float(present[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{key} must be numeric, got {present[key]!r}") from exc
+        return _require_finite(value, key)
+    if required:
+        raise ValueError(f"Missing required field; expected one of: {', '.join(aliases)}")
+    return None
+
+
 def calculate_score(present: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Standard interface accepting dictionary/row parameters.
-    Maps various column names and types cleanly.
-    """
-    def _bool(key_aliases: List[str]) -> bool:
-        for k in key_aliases:
-            if k in present:
-                v = present[k]
-                if isinstance(v, bool):
-                    return v
-                if isinstance(v, (int, float)):
-                    return v > 0
-                if isinstance(v, str):
-                    return v.strip().lower() in ("1", "true", "yes", "y", "t", "pos", "positive")
-        return False
+    """Evaluate a dictionary/CSV-like record with strict input validation."""
+    no_cough = _read_bool(present, ["absence_of_cough", "no_cough", "cough_absent", "no_cough_or_coryza"])
+    tender_nodes = _read_bool(present, ["tender_anterior_cervical_nodes", "tender_cervical_nodes", "lymphadenopathy", "tender_nodes", "nodes"])
+    exudate = _read_bool(present, ["tonsillar_exudate_or_swelling", "tonsillar_exudate", "exudate", "pus", "tonsil_swelling", "exudates"])
+    fever = _read_bool(present, ["history_of_fever_or_temp_gt_38", "history_of_fever", "fever", "fever_history", "temp_gt_38"])
+    clear_viral = _read_bool(present, ["clear_viral_features", "viral_features"])
+    high_risk = _read_bool(present, ["high_risk_context", "high_risk"])
 
-    def _float(key_aliases: List[str], default: float) -> float:
-        for k in key_aliases:
-            if k in present and present[k] is not None and str(present[k]).strip() != "":
-                try:
-                    return float(present[k])
-                except (ValueError, TypeError):
-                    pass
-        return default
+    temp = _read_float(present, ["temperature_c", "temperature", "temp", "temp_c"])
+    age = _read_float(present, ["age", "age_years", "patient_age"], required=True)
+    weight = _read_float(present, ["weight_kg", "weight", "wt"])
 
-    no_cough = _bool(["absence_of_cough", "no_cough", "cough_absent", "no_cough_or_coryza"])
-    tender_nodes = _bool(["tender_anterior_cervical_nodes", "tender_cervical_nodes", "lymphadenopathy", "tender_nodes", "nodes"])
-    exudate = _bool(["tonsillar_exudate_or_swelling", "tonsillar_exudate", "exudate", "pus", "tonsil_swelling", "exudates"])
-    fever = _bool(["history_of_fever_or_temp_gt_38", "history_of_fever", "fever", "fever_history", "temp_gt_38"])
+    pen_allergic = _read_bool(present, ["penicillin_allergic", "penicillin_allergy", "pen_allergy", "allergic_to_penicillin"])
+    severe_allergy = _read_bool(present, ["severe_allergy", "severe_penicillin_allergy", "anaphylaxis"])
+    gas_result = None
+    for key in ("gas_test_result", "test_result"):
+        if key in present and present[key] is not None and str(present[key]).strip():
+            gas_result = str(present[key])
+            break
 
-    temp = None
-    if any(k in present for k in ("temperature_c", "temperature", "temp", "temp_c")):
-        temp = _float(["temperature_c", "temperature", "temp", "temp_c"], 37.0)
-
-    age = _float(["age", "age_years", "patient_age"], 30.0)
-    weight = None
-    if any(k in present for k in ("weight_kg", "weight", "wt")):
-        weight = _float(["weight_kg", "weight", "wt"], 70.0)
-
-    pen_allergic = _bool(["penicillin_allergic", "penicillin_allergy", "pen_allergy", "allergic_to_penicillin"])
-    severe_allergy = _bool(["severe_allergy", "severe_penicillin_allergy", "anaphylaxis"])
-
-    res = evaluate_mcisaac(
+    result = evaluate_mcisaac(
         absence_of_cough=no_cough,
         tender_anterior_cervical_nodes=tender_nodes,
         tonsillar_exudate_or_swelling=exudate,
         history_of_fever_or_temp_gt_38=fever,
-        age_years=age,
+        age_years=float(age),
         temperature_c=temp,
         penicillin_allergic=pen_allergic,
         severe_allergy=severe_allergy,
         weight_kg=weight,
+        gas_test_result=gas_result,
+        clear_viral_features=clear_viral,
+        high_risk_context=high_risk,
     )
 
-    detail_dict = {}
-    if no_cough: detail_dict["Absence of cough"] = 1
-    if tender_nodes: detail_dict["Tender anterior cervical nodes"] = 1
-    if exudate: detail_dict["Tonsillar exudate/swelling"] = 1
-    if fever or (temp and temp >= 38.0): detail_dict["Fever (>38C / history)"] = 1
-    if res.age_modifier != 0: detail_dict[f"Age modifier ({res.age_years} yrs)"] = res.age_modifier
+    detail: Dict[str, int] = {}
+    if no_cough:
+        detail["Absence of cough"] = 1
+    if tender_nodes:
+        detail["Tender anterior cervical nodes"] = 1
+    if exudate:
+        detail["Tonsillar exudate/swelling"] = 1
+    if fever or (temp is not None and temp >= 38.0):
+        detail["Fever (≥38°C/history)"] = 1
+    if result.age_modifier:
+        detail[f"Age modifier ({result.age_years:g} years)"] = result.age_modifier
 
     return {
-        "score": res.mcisaac_score,
-        "centor_score": res.centor_score,
-        "tier": res.risk_tier.value.lower(),
-        "risk_tier": res.risk_tier.value,
-        "strep_probability": res.strep_probability_pct,
-        "recommended_action": res.recommended_action.value,
-        "clinical_guidance": res.clinical_guidance,
-        "detail": detail_dict,
-        "warnings": res.warnings,
-        "antibiotics": res.antibiotic_options,
+        "score": result.mcisaac_score,
+        "centor_score": result.centor_score,
+        "tier": result.risk_tier.value.lower(),
+        "risk_tier": result.risk_tier.value,
+        "strep_probability": result.strep_probability_pct,
+        "recommended_action": result.recommended_action.value,
+        "clinical_guidance": result.clinical_guidance,
+        "score_applicable": result.score_applicable,
+        "gas_test_result": result.gas_test_result,
+        "detail": detail,
+        "warnings": result.warnings,
+        "antibiotics": result.antibiotic_options,
     }
 
 
@@ -413,33 +546,52 @@ def assess_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def process_csv(inp: str, out: str) -> List[Dict[str, Any]]:
-    """
-    Batch evaluates a CSV file of sore throat cases and saves scored outputs.
-    """
-    with open(inp, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+    """Batch-evaluate a CSV and write scored records."""
+    with open(inp, newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
         fieldnames = list(reader.fieldnames or [])
         rows = list(reader)
 
-    results = []
-    for r in rows:
-        scored = assess_row(r)
-        merged = dict(r)
-        merged["centor_score"] = scored["centor_score"]
-        merged["mcisaac_score"] = scored["score"]
-        merged["risk_tier"] = scored["risk_tier"]
-        merged["strep_probability"] = scored["strep_probability"]
-        merged["recommended_action"] = scored["recommended_action"]
-        merged["clinical_guidance"] = scored["clinical_guidance"]
+    if not fieldnames:
+        raise ValueError("Input CSV has no header row")
+
+    results: List[Dict[str, Any]] = []
+    for index, row in enumerate(rows, start=2):
+        try:
+            scored = assess_row(row)
+        except ValueError as exc:
+            patient_id = row.get("patient_id") or row.get("id") or "unknown"
+            raise ValueError(f"Invalid data at CSV row {index} (patient {patient_id}): {exc}") from exc
+
+        merged = dict(row)
+        merged.update(
+            {
+                "centor_score": scored["centor_score"],
+                "mcisaac_score": scored["score"],
+                "risk_tier": scored["risk_tier"],
+                "strep_probability": scored["strep_probability"],
+                "recommended_action": scored["recommended_action"],
+                "clinical_guidance": scored["clinical_guidance"],
+            }
+        )
         results.append(merged)
 
-    out_fields = list(dict.fromkeys(fieldnames + [
-        "centor_score", "mcisaac_score", "risk_tier",
-        "strep_probability", "recommended_action", "clinical_guidance"
-    ]))
+    out_fields = list(
+        dict.fromkeys(
+            fieldnames
+            + [
+                "centor_score",
+                "mcisaac_score",
+                "risk_tier",
+                "strep_probability",
+                "recommended_action",
+                "clinical_guidance",
+            ]
+        )
+    )
 
-    with open(out, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=out_fields)
+    with open(out, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=out_fields)
         writer.writeheader()
         writer.writerows(results)
 
