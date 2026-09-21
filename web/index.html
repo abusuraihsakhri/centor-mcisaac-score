@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Centor and Modified Centor (McIsaac) pharyngitis risk calculator for GAS testing decisions.">
+  <title>Centor / McIsaac Score</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Pharyngitis risk stratification</p>
+        <h1>Centor / McIsaac Score</h1>
+      </div>
+      <button class="icon-button" id="theme-toggle" type="button" aria-pressed="false" aria-label="Toggle color theme">
+        <span aria-hidden="true">◐</span><span id="theme-text">Dark</span>
+      </button>
+    </header>
+
+    <section class="clinical-note" aria-label="Important clinical note">
+      <strong>Decision support only.</strong> Use the score to support GAS testing decisions; do not prescribe antibiotics from the score alone.
+    </section>
+
+    <div class="workspace">
+      <form class="card input-card" id="score-form" novalidate>
+        <div class="card-heading">
+          <div>
+            <p class="step">Inputs</p>
+            <h2>Clinical features</h2>
+          </div>
+          <button class="text-button" id="reset-button" type="button">Reset</button>
+        </div>
+
+        <div class="demographics">
+          <label class="field">
+            <span>Age <small>years</small></span>
+            <input id="age" name="age" type="number" min="0" max="130" step="0.1" value="25" inputmode="decimal" required>
+          </label>
+          <label class="field">
+            <span>Temperature <small>°C, optional</small></span>
+            <input id="temperature" name="temperature" type="number" min="30" max="45" step="0.1" inputmode="decimal" placeholder="e.g. 38.2">
+          </label>
+        </div>
+
+        <fieldset class="feature-grid">
+          <legend>Centor criteria</legend>
+          <label class="check-card"><input id="fever" type="checkbox"><span><b>Fever</b><small>History or ≥38°C</small></span></label>
+          <label class="check-card"><input id="no-cough" type="checkbox"><span><b>No cough</b><small>Absence of cough</small></span></label>
+          <label class="check-card"><input id="nodes" type="checkbox"><span><b>Tender nodes</b><small>Anterior cervical</small></span></label>
+          <label class="check-card"><input id="exudate" type="checkbox"><span><b>Exudate</b><small>Tonsillar swelling/exudate</small></span></label>
+        </fieldset>
+
+        <fieldset class="context-grid">
+          <legend>Context</legend>
+          <label class="switch-row"><input id="viral-features" type="checkbox"><span><b>Clear viral features</b><small>e.g. rhinorrhea, oral ulcers, hoarseness</small></span></label>
+          <label class="switch-row"><input id="high-risk" type="checkbox"><span><b>High-risk GAS context</b><small>e.g. household exposure or prior rheumatic fever</small></span></label>
+        </fieldset>
+
+        <label class="field test-field">
+          <span>GAS test result <small>optional</small></span>
+          <select id="test-result" name="test-result">
+            <option value="not_tested">Not tested / pending</option>
+            <option value="positive">Positive RADT / culture / NAAT</option>
+            <option value="negative_radt">Negative RADT</option>
+            <option value="negative_culture">Negative throat culture</option>
+            <option value="negative_naat">Negative molecular test</option>
+          </select>
+        </label>
+
+        <p class="error" id="form-error" role="alert" hidden></p>
+        <button class="primary-button" type="submit">Calculate score</button>
+      </form>
+
+      <section class="card result-card" id="result-panel" tabindex="-1" aria-live="polite">
+        <div class="score-hero">
+          <div>
+            <p class="step">Modified Centor</p>
+            <div class="score-line"><span id="score-value">0</span><small>McIsaac score</small></div>
+          </div>
+          <div class="risk-pill"><span id="risk-tier-value">Very low</span><b id="probability-value">8%</b></div>
+        </div>
+
+        <div class="metric-grid">
+          <div><span>Centor</span><b id="centor-value">0 / 4</b></div>
+          <div><span>Age modifier</span><b id="age-modifier-value">0</b></div>
+        </div>
+
+        <div class="action-box">
+          <span>Suggested next step</span>
+          <h2 id="action-value">Testing often unnecessary</h2>
+          <p id="guidance-value"></p>
+        </div>
+
+        <details class="details-block">
+          <summary>Score breakdown</summary>
+          <ul class="criteria-list" id="criteria-value"></ul>
+        </details>
+        <details class="details-block">
+          <summary>Interpretation notes</summary>
+          <ul class="notes-list" id="notes-value"></ul>
+        </details>
+      </section>
+    </div>
+
+    <footer>
+      <span>Runs entirely in your browser; entries are not uploaded.</span>
+      <span class="footer-links">
+        <a href="https://www.idsociety.org/practice-guideline/streptococcal-pharyngitis2/" target="_blank" rel="noopener noreferrer">IDSA 2025</a>
+        <a href="https://www.cdc.gov/group-a-strep/hcp/clinical-guidance/strep-throat.html" target="_blank" rel="noopener noreferrer">CDC</a>
+        <a href="https://pubmed.ncbi.nlm.nih.gov/22566485/" target="_blank" rel="noopener noreferrer">Fine 2012</a>
+      </span>
+    </footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
