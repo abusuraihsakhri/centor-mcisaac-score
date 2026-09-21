@@ -1,62 +1,83 @@
-# Centor & Modified Centor (McIsaac) Pharyngitis Risk Calculator
+# Centor / Modified Centor (McIsaac) Score
 
-> **Domain:** Primary Care, Emergency Medicine & Infectious Disease  
-> **Clinical Guidelines:** Centor et al. (Med Decis Making 1981), McIsaac et al. (CMAJ 1998, JAMA 2004), IDSA Clinical Practice Guideline for Group A Streptococcal Pharyngitis (2012)
+### [Open the Live Application →](https://abusuraihsakhri.github.io/centor-mcisaac-score/)
 
----
+A compact calculator for the Centor and Modified Centor (McIsaac) clinical scores used to stratify the likelihood of group A streptococcal (GAS) pharyngitis and support decisions about diagnostic testing.
 
-## 📖 Clinical Overview
+The repository includes a dependency-free browser calculator, a Python library, a command-line interface, CSV batch processing, and automated tests. The score is a decision-support aid: it does not diagnose GAS, and antibiotics should not be prescribed from the score alone.
 
-The **Centor and Modified Centor (McIsaac) Strep Score Calculator** provides standardized risk stratification for Group A Beta-Hemolytic Streptococcal (GABHS / *Streptococcus pyogenes*) pharyngitis in pediatric and adult patients presenting with acute sore throat.
+## What it does
 
-By systematically synthesizing key clinical criteria (tonsillar exudates, tender anterior cervical adenopathy, fever history, cough absence, and age stratification), the calculator prevents unnecessary antibiotic overprescription while identifying patients who require Rapid Antigen Detection Testing (RADT), throat culture, or immediate empiric therapy.
+The calculator assigns one point for each of the four Centor findings: fever/history of fever, absence of cough, tender anterior cervical nodes, and tonsillar exudate or swelling. The McIsaac modification then adds one point for ages 3–14, adds no age point for ages 15–44, and subtracts one point at age 45 or older.
 
-### Scoring Criteria
+Risk percentages shown by the implementation use the large 2012 validation cohort reported by Fine, Nizet, and Mandl. Scores of -1 and 5 are normalized to 0 and 4 for those validation estimates, matching the published analysis.
 
-| Clinical Feature | Description | Points |
-|:---|:---|:---|
-| **Absence of cough** | Patient does not report active cough | +1 |
-| **Swollen / tender cervical nodes** | Tender anterior cervical lymphadenopathy | +1 |
-| **Tonsillar exudates or swelling** | Tonsillar enlargement or white exudate | +1 |
-| **History of fever / temp > 38.0°C** | Objective or subjective acute febrile episode | +1 |
-| **Age 3 to 14 years** | Pediatric age window with peak incidence | +1 |
-| **Age 15 to 44 years** | Baseline adolescent/adult incidence | 0 |
-| **Age $\ge 45$ years** | Lower GABHS incidence in older adults | -1 |
+Current guidance is handled conservatively:
 
-### Risk Tiers & Clinical Actions
+- Clear viral features usually make GAS testing unnecessary.
+- The McIsaac scoring-system recommendation is not applied to children under 3 years.
+- High-risk clinical contexts can justify testing despite a low score.
+- A positive diagnostic test is required before antibiotic reference regimens are displayed.
+- A negative RADT in a symptomatic child or adolescent should be backed up with throat culture; routine back-up culture is generally not indicated in adults.
 
-| McIsaac Score | Risk Tier | GABHS Probability | Management Recommendation |
-|:---|:---|:---|:---|
-| **$\le 0$** | Very Low | 1% – 2.5% | No throat swab or culture; no antibiotics. Symptomatic analgesia. |
-| **1** | Low | 5% – 10% | No testing or antibiotics indicated. Supportive care. |
-| **2** | Intermediate | 11% – 17% | Perform RADT or throat culture; treat only if positive. |
-| **3** | High | 28% – 35% | Perform RADT/culture; treat if positive or empiric based on severity. |
-| **$\ge 4$** | Very High | 51% – 53% | Empiric antibiotic therapy or rapid testing with treatment indicated. |
+## Browser application
 
----
+The static application is in `web/` and is designed for GitHub Pages. It uses plain HTML, CSS, and JavaScript and does not require Python, Pyodide, a backend, cookies, or third-party runtime libraries.
 
-## 💻 CLI Quickstart & Usage
+Inputs and results stay in the browser. The app does not transmit clinical entries to a server.
 
-### 1. Evaluate Individual Patient Case
+## Command line
+
+Evaluate one case:
+
 ```bash
-python cli.py eval --fever --exudate --nodes --no-cough --age 8 --weight 25
+python cli.py eval --age 28 --fever --no-cough --nodes
 ```
 
-### 2. Interactive Guided Questionnaire
+Include a confirmed GAS result to show reference treatment regimens:
+
+```bash
+python cli.py eval --age 28 --gas-test-result positive
+```
+
+Run the guided questionnaire:
+
 ```bash
 python cli.py interactive
 ```
 
-### 3. Batch Process Patient Cohort
+Batch-process the included CSV example:
+
 ```bash
-python cli.py batch -i sample.csv -o out_results.csv
+python cli.py batch -i sample.csv -o scored_mcisaac_batch.csv
 ```
 
----
+## Testing
 
-## 🧪 Verification & Testing
+No runtime Python dependencies are required.
 
-Execute comprehensive unit tests via pytest:
 ```bash
-python -m pytest -p no:zarr
+python -m compileall -q centor.py cli.py
+python -m unittest discover -s tests -v
+python cli.py batch -i sample.csv -o out_smoke.csv
+node --check web/app.js
+node --check web/calculator.mjs
+node --test web/tests/*.test.mjs
 ```
+
+GitHub Actions runs the Python suite on Python 3.10–3.13 and separately tests the browser scoring module with Node.js 20.
+
+## Clinical references
+
+- Infectious Diseases Society of America. 2025 Clinical Practice Guideline Update on Group A Streptococcal Pharyngitis: Risk Assessment Using Clinical Scoring Systems in Children and Adults. https://www.idsociety.org/practice-guideline/streptococcal-pharyngitis2/
+- CDC. Clinical Guidance for Group A Streptococcal Pharyngitis. https://www.cdc.gov/group-a-strep/hcp/clinical-guidance/strep-throat.html
+- Fine AM, Nizet V, Mandl KD. Large-Scale Validation of the Centor and McIsaac Scores to Predict Group A Streptococcal Pharyngitis. *Arch Intern Med.* 2012;172(11):847–852. doi:10.1001/archinternmed.2012.950.
+- McIsaac WJ, White D, Tannenbaum D, Low DE. A clinical score to reduce unnecessary antibiotic use in patients with sore throat. *CMAJ.* 1998;158(1):75–83.
+
+## Browser compatibility
+
+The static app uses standard ES modules, CSS Grid, and native form controls. Current versions of Chrome/Chromium, Edge, Firefox, and Safari are supported. JavaScript must be enabled.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

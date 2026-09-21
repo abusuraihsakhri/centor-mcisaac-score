@@ -32,3 +32,18 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify live site
+        shell: bash
+        run: |
+          url="${{ steps.deployment.outputs.page_url }}"
+          for attempt in {1..10}; do
+            if html="$(curl --fail --silent --show-error --location "${url}?sha=${GITHUB_SHA}")" \
+              && grep -q "Centor / McIsaac Score" <<< "$html" \
+              && curl --fail --silent --show-error --location "${url}calculator.mjs?sha=${GITHUB_SHA}" | grep -q "VALIDATION_ESTIMATES"; then
+              echo "Verified ${url}"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Live-site smoke test failed for ${url}" >&2
+          exit 1
